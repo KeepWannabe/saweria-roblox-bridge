@@ -1,15 +1,10 @@
-const express = require('express');
-const axios = require('axios');
-const app = express();
+import express from 'express';
 
+const app = express();
 app.use(express.json());
 
-const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
-const UNIVERSE_ID = process.env.UNIVERSE_ID;
-const TOPIC = "SaweriaDonation";
-
-app.post('/saweria-webhook', async (req, res) => {
-    const payload = req.body;
+app.post('*', async (req, res) => {
+    const payload = req.body || {};
 
     const donationData = {
         donator_name: payload.donator_name || "Someone",
@@ -17,27 +12,41 @@ app.post('/saweria-webhook', async (req, res) => {
         message: payload.message || ""
     };
 
+    const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
+    const UNIVERSE_ID = process.env.UNIVERSE_ID;
+    const TOPIC = "SaweriaDonation";
+
+    if (!ROBLOX_API_KEY || !UNIVERSE_ID) {
+        return res.status(500).json({ error: "Missing Environment Variables" });
+    }
+
     try {
-        // Publish to Roblox via Open Cloud Messaging Service API
-        await axios.post(
+        const response = await fetch(
             `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/${TOPIC}`,
-            { message: JSON.stringify(donationData) },
             {
+                method: 'POST',
                 headers: {
                     'x-api-key': ROBLOX_API_KEY,
                     'Content-Type': 'application/json'
-                }
+                },
+                body: JSON.stringify({ message: JSON.stringify(donationData) })
             }
         );
 
-        res.status(200).send("OK");
+        if (!response.ok) {
+            const errorText = await response.text();
+            return res.status(500).json({ error: "Roblox API Error", details: errorText });
+        }
+
+        return res.status(200).json({ success: true, message: "Donation forwarded to Roblox" });
     } catch (error) {
-        console.error("Roblox API Error:", error.response?.data || error.message);
-        res.status(500).send("Failed to deliver donation to Roblox");
+        return res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
-app.get('/', (req, res) => res.send("Saweria Roblox Bridge is Active"));
+// Fallback GET route to verify deployment
+app.get('*', (req, res) => {
+    res.send("Saweria Roblox Bridge is Live!");
+});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+export default app;
